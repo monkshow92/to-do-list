@@ -14,6 +14,7 @@ import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,18 +33,21 @@ import java.util.stream.IntStream;
 
 @RunWith(SpringRunner.class)
 @SpringBootTest
-public class ToDoListServiceTests {
+public class ServicesTests {
 
 	@TestConfiguration
 	static class ToDoListServiceTestContextConfiguration {
+
 		@Bean
 		public ToDoListService toDoListService() {
 			return new ToDoListService();
 		}
+
 		@Bean
 		public TaskService taskService() {
 			return new TaskService();
 		}
+
 	}
 
 	@Autowired
@@ -52,11 +56,11 @@ public class ToDoListServiceTests {
 	@Autowired
 	private TaskService taskService;
 
-	@MockBean
-	private TaskDao taskDao;
+    @MockBean
+    private ToDoListDao toDoListDao;
 
 	@MockBean
-	private ToDoListDao toDoListDao;
+	private TaskDao taskDao;
 
 	@Rule
 	public ExpectedException exception = ExpectedException.none();
@@ -64,6 +68,9 @@ public class ToDoListServiceTests {
 	private ToDoList newToDoList = new ToDoList("newToDoList", "New to-do list", false);
 
 	private Task newTask = new Task(newToDoList, "New Task", (short) 1, "TO DO", false, null);
+
+	@Captor
+    private ArgumentCaptor<ToDoList> toDoListCaptor;
 
 	@Before
 	public void setUpToDoList() {
@@ -116,8 +123,9 @@ public class ToDoListServiceTests {
 		List<ToDoList> toDoLists = toDoListService.getAllToDoLists();
 
 		// then
-		assertThat(toDoLists.size())
-				.isEqualTo(4);
+        assertThat(toDoLists).isNotNull();
+        assertThat(toDoLists).isNotEmpty();
+		assertThat(toDoLists.size()).isEqualTo(4);
 		assertThat(toDoLists.stream()
 				.allMatch(tdl -> tdl.getName().equals("toDoList" + tdl.getId()) &&
 						  	tdl.getDescription().equals("To-do List #" + tdl.getId()) &&
@@ -128,10 +136,10 @@ public class ToDoListServiceTests {
 	@Test
 	public void whenInsertToDoList_thenToDoListShouldBeCreated() {
 		// when
-		ToDoList insertedToDoList = toDoListService.insertToDoList(newToDoList);
+        ToDoList toDoListToInsert = toDoListService.insertToDoList(newToDoList);
 
-		// then
-		assertThatToDoListsAreEqual(insertedToDoList, newToDoList);
+        // then
+		assertThatToDoListsAreEqual(newToDoList, toDoListToInsert);
 	}
 
 	@Test
@@ -183,9 +191,10 @@ public class ToDoListServiceTests {
 
 	@Before
 	public void setUpTask() {
-		ToDoList toDoList = new ToDoList("toDoList", "To-do List", false);
-		toDoList.setId(6);
-		Mockito.when(toDoListDao.exists(toDoList.getId())).thenReturn(true);
+	    int toDoListId = 6;
+		Mockito.when(toDoListDao.exists(toDoListId)).thenReturn(true);
+        ToDoList toDoList = new ToDoList("toDoList", "To-do List", false);
+        toDoList.setId(toDoListId);
 
 		// get all tasks by to-do list id
 		List<Task> tasks = IntStream.range(16, 21)
@@ -203,7 +212,7 @@ public class ToDoListServiceTests {
 				.thenReturn(tasks);
 
 		// get task by id
-		Mockito.when(taskDao.findByIdAndToDoListId(16, 6))
+		Mockito.when(taskDao.findByIdAndToDoListId(16, toDoListId))
 				.thenReturn(Optional.of(tasks.get(0)));
 
 		// insert task
@@ -213,7 +222,7 @@ public class ToDoListServiceTests {
 		// deleteTask
 		int idToDelete = 17;
 		Mockito.doNothing().when(taskDao).delete(idToDelete);
-		Mockito.when(taskDao.findByIdAndToDoListId(idToDelete, 6))
+		Mockito.when(taskDao.findByIdAndToDoListId(idToDelete, toDoListId))
 				.thenThrow(new TaskNotFoundException(idToDelete));
 		Mockito.when(taskDao.exists(idToDelete))
 				.thenReturn(true);
@@ -241,11 +250,7 @@ public class ToDoListServiceTests {
 		Task task = taskService.getTaskById(16, 6);
 
 		// then
-		assertThat(task.getId()).isEqualTo(16);
-		assertThat(task.getDescription()).isEqualTo("Task #16");
-		assertThat(task.getStatus()).isEqualTo("TO DO");
-		assertThat(task.getPriority()).isEqualTo((short) 1);
-		assertThat(task.getDone()).isFalse();
+		assertThatTaskIsEqual(task,16, "Task #16", (short) 1, "TO DO", false, null);
 	}
 
 	@Test
@@ -254,10 +259,8 @@ public class ToDoListServiceTests {
 		Task task = taskService.insertTask(newTask, 6);
 
 		// then
-		assertThat(task.getDescription()).isEqualTo("New Task");
+		assertThatTasksAreEqual(task, newTask);
 	}
-
-
 
 	@Test
 	public void whenUpdateTask_thenTaskShouldBeUpdated() {
@@ -271,9 +274,7 @@ public class ToDoListServiceTests {
 
 		// then
 		Task updatedTask = taskService.getTaskById(16, 6);
-		assertThat(updatedTask.getDescription()).isEqualTo("Updated task");
-		assertThat(updatedTask.getStatus()).isEqualTo("DONE");
-		assertThat(updatedTask.getDone()).isTrue();
+        assertThatTasksAreEqual(updatedTask, newTask);
 	}
 
 	@Test
@@ -290,5 +291,24 @@ public class ToDoListServiceTests {
 		assertThat(deletedTask)
 				.isNull();
 	}
+
+    // private HELPER methods
+
+    private void assertThatTasksAreEqual(Task task1, Task task2) {
+        assertThat(task1.getDescription()).isEqualTo(task2.getDescription());
+        assertThat(task1.getStatus()).isEqualTo(task2.getStatus());
+        assertThat(task1.getPriority()).isEqualTo(task2.getPriority());
+        assertThat(task1.getDone()).isEqualTo(task2.getDone());
+        assertThat(task1.getObservations()).isEqualTo(task2.getObservations());
+    }
+
+    private void assertThatTaskIsEqual(Task task1, Integer id, String description, Short priority, String status, boolean done, String observations) {
+        assertThat(task1.getId()).isEqualTo(id);
+	    assertThat(task1.getDescription()).isEqualTo(description);
+        assertThat(task1.getStatus()).isEqualTo(status);
+        assertThat(task1.getPriority()).isEqualTo(priority);
+        assertThat(task1.getDone()).isEqualTo(done);
+        assertThat(task1.getObservations()).isEqualTo(observations);
+    }
 
 }
